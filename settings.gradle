@@ -1,0 +1,4 @@
+include ':app'
+include ':parcelKit'
+include ':parcelAnnotation'
+include ':parcelProcessor'
