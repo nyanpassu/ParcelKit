@@ -7,7 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Created by 丢猫 on 2015/3/8.
+ * Created by 雾雨 on 2015/3/8.
  */
 public class ParcelKit {
 
@@ -15,9 +15,9 @@ public class ParcelKit {
 
     public static final String INJECTOR_SUFFIX = "$$ParcelInjector";
 
-    private static final Map<Class<?>, Delegate<Object>> DELEGATE_CACHE = new LinkedHashMap<>();
+    private static final Map<Class<?>, Delegate<Object>> DELEGATE_CACHE = new LinkedHashMap<Class<?>, Delegate<Object>>();
 
-    private static final Map<Class<?>, Injector<Object>> INJECTOR_CACHE = new LinkedHashMap<>();
+    private static final Map<Class<?>, Injector<Object>> INJECTOR_CACHE = new LinkedHashMap<Class<?>, Injector<Object>>();
 
     public static Parcelable toParcelable(Object target) {
         Class<?> targetClass = target.getClass();

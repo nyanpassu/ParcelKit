@@ -8,7 +8,7 @@ import kirisame.android.toolset.parcel.ParcelField;
 import kirisame.android.toolset.parcel.ParcelKit;
 
 /**
- * Created by 丢猫 on 2015/3/10.
+ * Created by 雾雨 on 2015/3/10.
  */
 public class ParcelObject implements Parcelable {
 

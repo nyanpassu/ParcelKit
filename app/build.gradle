@@ -17,13 +17,16 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_7
         targetCompatibility JavaVersion.VERSION_1_7
     }
+
+    packagingOptions {
+        exclude 'META-INF/services/javax.annotation.processing.Processor'
+        exclude 'kirisame/android/toolset/parcel/internal/ParcelAnnotationProcessor.class'
+    }
 }
 
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
 
-    apt project(':parcelProcessor')
     compile 'com.jakewharton:butterknife:6.1.0'
-    compile project(':parcelAnnotation')
     compile project(':parcelKit')
 }
