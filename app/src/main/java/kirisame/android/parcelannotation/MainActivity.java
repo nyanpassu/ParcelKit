@@ -11,10 +11,15 @@ import android.widget.TextView;
 
 import butterknife.ButterKnife;
 import butterknife.InjectView;
+import kirisame.android.toolset.parcel.ParcelField;
+import kirisame.android.toolset.parcel.ParcelKit;
 
 public class MainActivity extends Activity {
 
     public static final String PARCEL_OBJECT = "parcel_object";
+
+    @ParcelField
+    String mParcelField;
 
     @InjectView(R.id.text)
     TextView mTextView;
@@ -32,11 +37,11 @@ public class MainActivity extends Activity {
         mButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ParcelObject object = new ParcelObject();
-                object.mMessage = "parcel message";
+
+                mParcelField = "hello parcel";
 
                 Intent intent = new Intent();
-                intent.putExtra(PARCEL_OBJECT,object);
+                intent.putExtra(PARCEL_OBJECT, ParcelKit.toParcelable(MainActivity.this));
                 intent.setClass(MainActivity.this, MainActivity.class);
 
                 startActivity(intent);
@@ -49,10 +54,10 @@ public class MainActivity extends Activity {
     private void getParcel() {
         Intent intent = getIntent();
         if (intent != null) {
-            ParcelObject object = intent.getParcelableExtra(PARCEL_OBJECT);
-            if (object != null) {
+            ParcelKit.fromParcelable(this,intent.getParcelableExtra(PARCEL_OBJECT));
+            if (mParcelField != null) {
                 mTextView.setVisibility(View.VISIBLE);
-                mTextView.setText(object.mMessage);
+                mTextView.setText(mParcelField);
             } else {
                 mTextView.setVisibility(View.GONE);
             }

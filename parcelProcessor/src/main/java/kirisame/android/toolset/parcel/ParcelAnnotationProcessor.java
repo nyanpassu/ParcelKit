@@ -40,7 +40,9 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 @SupportedSourceVersion(SourceVersion.RELEASE_7)
 public class ParcelAnnotationProcessor extends AbstractProcessor{
 
-    public static final String SUFFIX = "$$ParcelInjector";
+    public static final String DELEGATE_SUFFIX = "$$ParcelDelegate";
+
+    public static final String INJECTOR_SUFFIX = "$$ParcelInjector";
 
     public static final String PARCEL_TYPE = "android.os.Parcelable";
 
@@ -75,17 +77,17 @@ public class ParcelAnnotationProcessor extends AbstractProcessor{
 
         processingEnv.getMessager().printMessage(NOTE,"start process parcel annotation");
 
-        Map<TypeElement, ParcelInjector> targetClassMap = findAndParseTargets(roundEnv);
+        Map<TypeElement, CodeGenerator> targetClassMap = findAndParseTargets(roundEnv);
 
-        for (Map.Entry<TypeElement, ParcelInjector> entry : targetClassMap.entrySet()) {
+        for (Map.Entry<TypeElement, CodeGenerator> entry : targetClassMap.entrySet()) {
             TypeElement typeElement = entry.getKey();
-            ParcelInjector parcelInjector = entry.getValue();
+            CodeGenerator injectorCode = entry.getValue();
 
             try {
                 JavaFileObject source = mFiler.
-                        createSourceFile(parcelInjector.getClassFullNames(), typeElement);
+                        createSourceFile(injectorCode.getClassFullNames(), typeElement);
                 Writer writer = source.openWriter();
-                writer.write(parcelInjector.generateJavaSource());
+                writer.write(injectorCode.generateJavaSource());
                 writer.flush();
                 writer.close();
             } catch (IOException e) {
@@ -96,8 +98,8 @@ public class ParcelAnnotationProcessor extends AbstractProcessor{
         return true;
     }
 
-    private Map<TypeElement, ParcelInjector> findAndParseTargets(RoundEnvironment env) {
-        Map<TypeElement, ParcelInjector> targetClassMap = new LinkedHashMap<TypeElement, ParcelInjector>();
+    private Map<TypeElement, CodeGenerator> findAndParseTargets(RoundEnvironment env) {
+        Map<TypeElement, CodeGenerator> targetClassMap = new LinkedHashMap<TypeElement, CodeGenerator>();
 
         for (Element element : env.getElementsAnnotatedWith(ParcelField.class)) {
             try {
@@ -113,11 +115,40 @@ public class ParcelAnnotationProcessor extends AbstractProcessor{
         return targetClassMap;
     }
 
-    private void parseParcelField(Element element, Map<TypeElement, ParcelInjector> targetClassMap) {
+    private void parseParcelField(Element element, Map<TypeElement, CodeGenerator> targetClassMap) {
 
-        // get the enclosing class element
+        // we shall check all exception in code in a single execution , or user will have to run several times to find where they get opps
+        boolean hasError = false;
+
         TypeElement enclosingElement = (TypeElement) element.getEnclosingElement();
+        TypeMirror enclosingElementType = getElementType(enclosingElement);
+        TypeMirror elementType = getElementType(element);
 
+        hasError |= isInaccessibleViaGeneratedCode(ParcelField.class, "fields", element);
+        hasError |= isBindingInWrongPackage(ParcelField.class, element);
+
+        if (hasError) {
+            throw new RuntimeException("has error");
+        }
+
+        /**
+         *  now we create a {@link CodeGenerator} connecting with a enclosing element
+         */
+        CodeGenerator generator = getOrCreateTargetClass(targetClassMap, enclosingElement);
+
+        /**
+         *  now we create a {@link CodeFragment} connecting with a field of a Parcelable class
+         */
+        String name = element.getSimpleName().toString();
+        String type = elementType.toString();
+
+        note("elementName=%s,elementType=%s",name,type);
+
+        generator.addCodeFragment(name, type);
+
+    }
+
+    private TypeMirror getElementType(Element element) {
         // TypeMirror represents a type in java
         TypeMirror elementType = element.asType();
         // if the type is variable type , use the upper bound
@@ -125,66 +156,31 @@ public class ParcelAnnotationProcessor extends AbstractProcessor{
             TypeVariable typeVariable = (TypeVariable) elementType;
             elementType = typeVariable.getUpperBound();
         }
-
-        //TODO we shall check the element type could be put into parcel , or maybe we can do it at source check ?
-
-        // verify common generated code restrictions . code is directly pasted from butter-knife . deal with it later
-        if (isInaccessibleViaGeneratedCode(ParcelField.class, "fields", element)) {
-            return;
-        }
-
-        // code is directly pasted from butter-knife . deal with it later
-        if (isBindingInWrongPackage(ParcelField.class, element)) {
-            return;
-        }
-
-        /**
-         *  now we create a {@link ParcelInjector} connecting with a Parcelable class
-         */
-        ParcelInjector parcelInjector = getOrCreateTargetClass(targetClassMap, enclosingElement);
-
-        /**
-         *  now we create a {@link ParcelCreator} connecting with a field of a Parcelable class
-         */
-        String name = element.getSimpleName().toString();
-        String type = elementType.toString();
-
-        note("elementName=%s,elementType=%s",name,type);
-
-        ParcelCreator binding = new ParcelCreator(name, type);
-        parcelInjector.addParcelBinding(binding);
-
+        return elementType;
     }
 
-    // code is pasted from butter-knife with little modification . deal with it later
-    private ParcelInjector getOrCreateTargetClass(
-            Map<TypeElement, ParcelInjector> targetClassMap,
+    // create code generator
+    private CodeGenerator getOrCreateTargetClass(
+            Map<TypeElement, CodeGenerator> targetClassMap,
             TypeElement enclosingElement) {
 
-        TypeMirror enclosingElementType = enclosingElement.asType();
-        if (enclosingElementType instanceof TypeVariable) {
-            TypeVariable typeVariable = (TypeVariable) enclosingElementType;
-            enclosingElementType = typeVariable.getUpperBound();
-        }
-        if (!isParcelable(enclosingElementType)){
-            error(enclosingElement, "enclosingElement must implement parcelable . (%s.%s)",
-                    enclosingElement.getQualifiedName(), enclosingElement.getSimpleName());
+        boolean isParcelable = isParcelable(enclosingElement.asType());
+        String suffix = isParcelable ? INJECTOR_SUFFIX : DELEGATE_SUFFIX;
 
-            throw new RuntimeException("create parcel injector error");
-        }
-
-        ParcelInjector parcelInjector = targetClassMap.get(enclosingElement);
-        if (parcelInjector == null) {
+        CodeGenerator codeGenerator = targetClassMap.get(enclosingElement);
+        if (codeGenerator == null) {
             String targetClassName = enclosingElement.getQualifiedName().toString();
             String packageName = getPackageName(enclosingElement);
-            String className = getClassName(enclosingElement, packageName) + SUFFIX;
+            String className = getClassName(enclosingElement, packageName) + suffix;
 
             note("enclosingElementHash=%s,targetClassName=%s,packageName=%s,className=%s", enclosingElement.hashCode(), targetClassName, packageName, className);
 
-            parcelInjector = new ParcelInjector(packageName, className, targetClassName);
-            targetClassMap.put(enclosingElement, parcelInjector);
+            codeGenerator = isParcelable?
+                    new InjectorGenerator(packageName, className, targetClassName):
+                    new DelegateGenerator(packageName, className, targetClassName);
+            targetClassMap.put(enclosingElement, codeGenerator);
         }
-        return parcelInjector;
+        return codeGenerator;
     }
 
     private boolean isPrimitiveType(TypeMirror typeMirror) {
@@ -196,7 +192,7 @@ public class ParcelAnnotationProcessor extends AbstractProcessor{
     }
 
 
-    // code is pasted from butter-knife . deal with it later
+    // check the element modifier type and visibility in a single execution
     private boolean isInaccessibleViaGeneratedCode(Class<? extends Annotation> annotationClass,
                                                    String targetThing, Element element) {
         boolean hasError = false;
@@ -230,8 +226,7 @@ public class ParcelAnnotationProcessor extends AbstractProcessor{
         return hasError;
     }
 
-
-    // code is pasted from butter-knife . deal with it later
+    // the code of this method is pasted from butter-knife , i'm not sure why we have to run this check
     private boolean isBindingInWrongPackage(Class<? extends Annotation> annotationClass,
                                             Element element) {
         TypeElement enclosingElement = (TypeElement) element.getEnclosingElement();
